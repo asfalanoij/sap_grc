@@ -1,0 +1,102 @@
+# Privileged Access Rules - Company X SAP GRC-Lite
+# Ruleset Version: v2.0.0
+# Control: KC-02 - Privileged Access Recertification
+# Owner: IT (1st line)
+
+metadata:
+  version: "2.0.0"
+  organization: "Company X"
+  system: "SAP S/4HANA Client 300"
+  control_id: "KC-02"
+  review_frequency: "Quarterly"
+  owner: "IT"
+  assurance: "Internal Audit"
+
+privileged_profiles:
+  - id: PA-001
+    profile: "SAP_ALL"
+    description: "Full system access - highest privilege level"
+    risk_level: CRITICAL
+    allowed_users: []
+    allowed_roles: ["BASIS_ADMIN_LEAD"]
+    review_frequency: "Monthly"
+    recertification_required: true
+    recertification_approver: "CISO"
+    recurrence_policy:
+      max_active_users: 0
+      escalate_immediately: true
+      escalation_owner: "CISO"
+
+  - id: PA-002
+    profile: "SAP_NEW"
+    description: "New user provisioning profile"
+    risk_level: HIGH
+    allowed_users: []
+    allowed_roles: ["BASIS_PROVISIONER"]
+    review_frequency: "Monthly"
+    recertification_required: true
+    recertification_approver: "IT Manager"
+    recurrence_policy:
+      max_active_users: 2
+      escalate_after_users: 2
+      escalation_owner: "IT Risk Manager"
+
+  - id: PA-003
+    profile: "S_TABU_DIS"
+    description: "Table display access - can view sensitive config tables"
+    risk_level: HIGH
+    allowed_roles: ["BASIS_ADMIN", "AUDIT_READONLY"]
+    review_frequency: "Quarterly"
+    recertification_required: true
+    recertification_approver: "IT Risk Manager"
+    recurrence_policy:
+      max_active_users: 5
+      escalate_after_users: 5
+      escalation_owner: "IT Risk Manager"
+
+  - id: PA-004
+    profile: "FIREFIGHTER_ID"
+    description: "Emergency access firefighter ID"
+    risk_level: CRITICAL
+    allowed_users: []
+    allowed_roles: ["BASIS_ADMIN_LEAD", "IT_EMERGENCY_RESP"]
+    review_frequency: "After each use"
+    recertification_required: true
+    recertification_approver: "CISO"
+    usage_logging: true
+    log_review_frequency: "After each session"
+    recurrence_policy:
+      max_concurrent_sessions: 1
+      session_timeout_hours: 4
+      post_use_review_days: 1
+      escalation_owner: "CISO"
+
+rules:
+  - id: PA-RULE-001
+    name: "No active SAP_ALL outside approved list"
+    check: "users_with_profile(SAP_ALL) NOT IN allowed_users"
+    severity: CRITICAL
+    action: "Immediate revocation + CISO notification"
+
+  - id: PA-RULE-002
+    name: "Firefighter ID must not be permanently assigned"
+    check: "FIREFIGHTER_ID assigned permanently to any user"
+    severity: CRITICAL
+    action: "Immediate revocation + audit log review"
+
+  - id: PA-RULE-003
+    name: "Privileged profiles must be recertified quarterly"
+    check: "last_recertification_date > 90 days"
+    severity: HIGH
+    action: "Trigger recertification workflow"
+
+thresholds:
+  CRITICAL:
+    sla_days: 1
+    notify: ["CISO", "Internal Audit", "IT Risk Manager"]
+  HIGH:
+    sla_days: 3
+    notify: ["IT Risk Manager", "IT Manager"]
+  MEDIUM:
+    sla_days: 7
+    notify: ["IT Manager"]

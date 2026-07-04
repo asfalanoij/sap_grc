@@ -1,0 +1,100 @@
+# Dormant Account Rules - Company X SAP GRC-Lite
+# Ruleset Version: v2.0.0
+# Control: KC-04 - Dormant Account Detection
+# Owner: IT (1st line)
+
+metadata:
+  version: "2.0.0"
+  organization: "Company X"
+  system: "SAP S/4HANA Client 300"
+  control_id: "KC-04"
+  check_frequency: "Monthly"
+  owner: "IT"
+  assurance: "Internal Audit"
+
+dormancy_thresholds:
+  standard_user:
+    inactive_days: 90
+    action: "lock_account"
+    notify_before_days: 14
+    notify_owner: true
+    risk_level: MEDIUM
+
+  privileged_user:
+    inactive_days: 30
+    action: "lock_account_and_review"
+    notify_before_days: 7
+    notify_owner: true
+    notify_manager: true
+    risk_level: HIGH
+
+  service_account:
+    inactive_days: 60
+    action: "flag_for_review"
+    notify_before_days: 10
+    notify_owner: true
+    risk_level: HIGH
+
+  emergency_access:
+    inactive_days: 7
+    action: "deactivate_immediately"
+    notify_before_days: 0
+    risk_level: CRITICAL
+
+rules:
+  - id: DA-RULE-001
+    name: "Standard user inactive 90+ days"
+    check: "last_login_date > 90 days AND account_type = STANDARD"
+    severity: MEDIUM
+    action: "Lock account, notify line manager"
+    recurrence_policy:
+      flag_if_recurring: true
+      recurrence_window_cycles: 2
+      escalation_owner: "IT Manager"
+
+  - id: DA-RULE-002
+    name: "Privileged user inactive 30+ days"
+    check: "last_login_date > 30 days AND account_type = PRIVILEGED"
+    severity: HIGH
+    action: "Lock account, notify IT Risk Manager and CISO"
+    recurrence_policy:
+      flag_if_recurring: true
+      recurrence_window_cycles: 1
+      escalation_owner: "CISO"
+
+  - id: DA-RULE-003
+    name: "Terminated employee account still active"
+    check: "user_status = ACTIVE AND hr_status = TERMINATED"
+    severity: CRITICAL
+    action: "Immediate account disablement + IT Risk notification"
+    recurrence_policy:
+      max_occurrences: 0
+      escalate_immediately: true
+      escalation_owner: "CISO"
+
+  - id: DA-RULE-004
+    name: "Service account with no owner assigned"
+    check: "account_type = SERVICE AND owner = NULL"
+    severity: HIGH
+    action: "Flag for ownership assignment, suspend if unresolved after 14 days"
+    recurrence_policy:
+      max_unresolved_days: 14
+      escalation_owner: "IT Manager"
+
+post_termination:
+  disable_on_hr_termination: true
+  disable_delay_hours: 0
+  archive_after_days: 30
+  delete_after_days: 365
+  retain_audit_log_years: 5
+
+thresholds:
+  CRITICAL:
+    sla_days: 1
+    notify: ["CISO", "Internal Audit", "HR"]
+  HIGH:
+    sla_days: 3
+    notify: ["IT Risk Manager", "IT Manager"]
+  MEDIUM:
+    sla_days: 7
+    notify: ["IT Manager", "Line Manager"]

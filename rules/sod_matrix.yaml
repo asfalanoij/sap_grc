@@ -1,0 +1,98 @@
+# SoD Matrix Rules - Company X SAP GRC-Lite
+# Ruleset Version: v2.0.0
+# Standard: ICoFR / COSO 2013 / PCAOB AS 2201
+# Owner: IT Risk (2nd line)
+
+metadata:
+  version: "2.0.0"
+  organization: "Company X"
+  system: "SAP S/4HANA Client 300"
+  review_period: "2026-01-01 to 2026-06-30"
+  last_updated: "2026-01-01"
+  owner: "IT Risk"
+  assurance: "Internal Audit"
+
+conflict_pairs:
+  - id: SOD-001
+    name: "Create Vendor + Approve Payment"
+    role_a: "MM_VENDOR_CREATE"
+    role_b: "FI_PAYMENT_APPROVE"
+    risk_level: HIGH
+    coso_principle: "Control Activities - Segregation of Duties"
+    icofr_ref: "KC-01"
+    description: "User with ability to create vendors AND approve payments can facilitate fraudulent payments."
+    remediation_action: "Remove one of the conflicting roles. Assign payment approval to Finance Manager only."
+    recurrence_policy:
+      max_occurrences: 1
+      escalate_after: 1
+      escalation_owner: "IT Risk Manager"
+
+  - id: SOD-002
+    name: "Create PO + Goods Receipt"
+    role_a: "MM_PO_CREATE"
+    role_b: "MM_GOODS_RECEIPT"
+    risk_level: HIGH
+    coso_principle: "Control Activities - Segregation of Duties"
+    icofr_ref: "KC-01"
+    description: "User can create fictitious POs and self-confirm goods receipt."
+    remediation_action: "Separate procurement and warehouse roles. GR must be performed by a different user."
+    recurrence_policy:
+      max_occurrences: 1
+      escalate_after: 1
+      escalation_owner: "Procurement Manager"
+
+  - id: SOD-003
+    name: "Post Journal Entry + Approve JE"
+    role_a: "FI_JE_POST"
+    role_b: "FI_JE_APPROVE"
+    risk_level: HIGH
+    coso_principle: "Control Activities - Segregation of Duties"
+    icofr_ref: "KC-01"
+    description: "User can post and self-approve journal entries, enabling manipulation of financial records."
+    remediation_action: "Separate JE posting and approval roles. Approval must be a senior Finance role."
+    recurrence_policy:
+      max_occurrences: 0
+      escalate_after: 0
+      escalation_owner: "CFO"
+
+  - id: SOD-004
+    name: "Create Customer + Post Billing"
+    role_a: "SD_CUSTOMER_CREATE"
+    role_b: "SD_BILLING_POST"
+    risk_level: MEDIUM
+    coso_principle: "Control Activities - Segregation of Duties"
+    icofr_ref: "KC-01"
+    description: "User can create fictitious customers and post billing to them."
+    remediation_action: "Separate customer master and billing roles."
+    recurrence_policy:
+      max_occurrences: 2
+      escalate_after: 2
+      escalation_owner: "Sales Manager"
+
+  - id: SOD-005
+    name: "Maintain User Roles + Execute Transactions"
+    role_a: "BASIS_ROLE_ADMIN"
+    role_b: "FI_PAYMENT_APPROVE"
+    risk_level: CRITICAL
+    coso_principle: "Control Environment - Access Controls"
+    icofr_ref: "KC-02"
+    description: "Basis admin can grant themselves privileged access and execute financial transactions."
+    remediation_action: "Basis admin must not hold any business transaction roles. Immediate removal required."
+    recurrence_policy:
+      max_occurrences: 0
+      escalate_after: 0
+      escalation_owner: "CISO"
+
+thresholds:
+  CRITICAL:
+    sla_days: 3
+    notify: ["CISO", "Internal Audit", "IT Risk Manager"]
+  HIGH:
+    sla_days: 7
+    notify: ["IT Risk Manager", "Department Head"]
+  MEDIUM:
+    sla_days: 14
+    notify: ["IT Manager"]
+  LOW:
+    sla_days: 30
+    notify: ["IT Team Lead"]

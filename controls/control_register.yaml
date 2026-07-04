@@ -1,0 +1,136 @@
+# Control Register - Company X SAP GRC-Lite
+# Ruleset Version: v2.0.0
+# Framework: ICoFR / COSO 2013 / PCAOB AS 2201 / AS 1105
+# System: SAP S/4HANA Client 300
+
+metadata:
+  version: "2.0.0"
+  organization: "Company X"
+  system: "SAP S/4HANA Client 300"
+  framework: "ICoFR / COSO 2013"
+  audit_standard: "PCAOB AS 2201 / AS 1105"
+  review_period: "2026-01-01 to 2026-06-30"
+  owner_definition: "GR Unit + IT Risk (2nd line)"
+  owner_operation: "IT (1st line)"
+  assurance: "Internal Audit (3rd line)"
+
+controls:
+  - id: KC-01
+    name: "SoD Matrix Review"
+    type: Preventive
+    category: "Access Control"
+    coso_component: "Control Activities"
+    coso_principle: "13 - Deploy Control Activities"
+    description: "Quarterly review of the Segregation of Duties matrix to ensure no user holds conflicting roles in SAP S/4HANA. Covers financial, procurement, and basis functions."
+    frequency: Quarterly
+    owner: "IT Risk"
+    operator: "IT"
+    reviewer: "Internal Audit"
+    rule_reference: "rules/sod_matrix.yaml"
+    evidence:
+      - type: "Screenshot of SAP role assignments"
+      - type: "Signed review attestation"
+      - type: "Findings JSON with SHA256 hash"
+    test_procedure: "Extract user-role matrix from SAP. Run rules engine against sod_matrix.yaml. Document violations and remediation status."
+    pass_criteria: "Zero open HIGH/CRITICAL SoD violations at cycle end"
+    icofr_assertion: "Completeness, Existence"
+
+  - id: KC-02
+    name: "Privileged Access Recertification"
+    type: Preventive
+    category: "Access Control"
+    coso_component: "Control Activities"
+    coso_principle: "13 - Deploy Control Activities"
+    description: "Quarterly recertification of all privileged SAP profiles (SAP_ALL, SAP_NEW, S_TABU_DIS, Firefighter IDs). Each profile holder must be re-approved by designated owner."
+    frequency: Quarterly
+    owner: "IT"
+    operator: "IT"
+    reviewer: "Internal Audit"
+    rule_reference: "rules/privileged_access.yaml"
+    evidence:
+      - type: "List of users with privileged profiles"
+      - type: "Recertification sign-off from CISO/IT Manager"
+      - type: "Findings JSON with SHA256 hash"
+    test_procedure: "Extract privileged profile assignments. Compare against approved list. Flag exceptions. Review firefighter ID usage logs."
+    pass_criteria: "All privileged profiles recertified. Zero SAP_ALL users outside approved list."
+    icofr_assertion: "Existence, Rights & Obligations"
+
+  - id: KC-03
+    name: "SoD Violation Detection"
+    type: Detective
+    category: "Access Monitoring"
+    coso_component: "Monitoring Activities"
+    coso_principle: "16 - Conduct Ongoing Evaluations"
+    description: "Daily automated detection of SoD violations using the rules engine. Findings are hashed, timestamped, and committed to git for audit trail."
+    frequency: Daily
+    owner: "IT"
+    operator: "IT"
+    reviewer: "Internal Audit"
+    rule_reference: "rules/sod_matrix.yaml"
+    automation: "GitHub Actions workflow (grc_checks.yml)"
+    evidence:
+      - type: "Auto-generated findings JSON"
+      - type: "GitHub Actions run log"
+      - type: "SHA256 hash in git commit"
+    test_procedure: "Review GitHub Actions run history. Verify findings are generated daily. Confirm SHA256 integrity."
+    pass_criteria: "Daily runs completed without errors. All findings with SLA met."
+    icofr_assertion: "Completeness"
+
+  - id: KC-04
+    name: "Dormant Account Detection"
+    type: Detective
+    category: "Access Monitoring"
+    coso_component: "Monitoring Activities"
+    coso_principle: "16 - Conduct Ongoing Evaluations"
+    description: "Monthly detection of dormant/inactive accounts in SAP S/4HANA. Accounts inactive beyond threshold are locked and reported."
+    frequency: Monthly
+    owner: "IT"
+    operator: "IT"
+    reviewer: "Internal Audit"
+    rule_reference: "rules/dormant_accounts.yaml"
+    evidence:
+      - type: "Dormant account report"
+      - type: "Account lock confirmation"
+      - type: "Findings JSON with SHA256 hash"
+    test_procedure: "Run dormant account check. Verify accounts locked per policy. Confirm terminated employees have no active accounts."
+    pass_criteria: "All accounts inactive >90 days locked. Zero terminated employee accounts active."
+    icofr_assertion: "Existence"
+
+  - id: KC-05
+    name: "Access Recurrence Flagging"
+    type: Detective
+    category: "Recurrence Monitoring"
+    coso_component: "Monitoring Activities"
+    coso_principle: "17 - Evaluate and Communicate Deficiencies"
+    description: "Per-cycle detection of recurring findings. Findings appearing in 2+ consecutive cycles are flagged as RECURRING and escalated for root cause analysis."
+    frequency: "Per review cycle"
+    owner: "Internal Audit"
+    operator: "IT Risk"
+    reviewer: "Internal Audit"
+    rule_reference: "remediation/remediation.yaml (recurrence_policy)"
+    evidence:
+      - type: "Recurrence flag in findings JSON"
+      - type: "Root cause analysis document"
+      - type: "Escalation notification record"
+    test_procedure: "Compare current cycle findings with previous cycles. Flag matches. Verify root cause docs exist for RECURRING/CHRONIC findings."
+    pass_criteria: "All recurring findings have documented root cause. CHRONIC findings have approved action plan."
+    icofr_assertion: "Completeness, Valuation"
+
+  - id: KC-06
+    name: "Evidence Archival"
+    type: Corrective
+    category: "Evidence Management"
+    coso_component: "Control Activities"
+    coso_principle: "12 - Deploy Control Activities through Policies"
+    description: "Per-cycle archival of all GRC findings to the evidence store. Findings are SHA256-hashed at generation and committed to git for tamper-evident chain of custody."
+    frequency: "Per review cycle"
+    owner: "IT Risk"
+    operator: "IT"
+    reviewer: "Internal Audit"
+    evidence:
+      - type: "evidence/sample_findings.json"
+      - type: "Git commit log with SHA256"
+      - type: "Cycle closure attestation"
+    test_procedure: "Verify evidence folder populated per cycle. Confirm SHA256 hash matches file content. Verify git history is unmodified."
+    pass_criteria: "All findings archived. SHA256 integrity verified. No gaps in evidence timeline."
+    icofr_assertion: "Completeness, Existence"

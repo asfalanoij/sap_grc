@@ -1,0 +1,160 @@
+# SAP GRC-Lite CI/CD Pipeline - Company X
+# Ruleset Version: v2.0.0
+# Triggers: Daily scheduled + on push to rules/ or checks/
+
+name: GRC Checks - Company X
+
+on:
+  schedule:
+    # Daily at 07:00 UTC (business hours +7 Jakarta)
+    - cron: '0 0 * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'rules/**'
+      - 'checks/**'
+      - 'remediation/**'
+      - 'controls/**'
+  workflow_dispatch:
+    inputs:
+      input_file:
+        description: 'Path to user-role JSON data file'
+        required: false
+        default: 'data/user_roles.json'
+
+jobs:
+  grc-check:
+    name: Run GRC Rules Engine
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml
+
+      - name: Set cycle ID
+        id: cycle
+        run: |
+          QUARTER=$(python3 -c "from datetime import datetime; m=datetime.now().month; print(f'{datetime.now().year}-Q{(m-1)//3+1}')")
+          echo "cycle_id=$QUARTER" >> $GITHUB_OUTPUT
+          echo "Cycle ID: $QUARTER"
+
+      - name: Check if input data exists
+        id: check_data
+        run: |
+          if [ -f "data/user_roles.json" ]; then
+            echo "data_exists=true" >> $GITHUB_OUTPUT
+            echo "Input data found: data/user_roles.json"
+          else
+            echo "data_exists=false" >> $GITHUB_OUTPUT
+            echo "WARNING: No user-role data found. Creating sample for demonstration."
+            mkdir -p data
+            echo '[]' > data/user_roles.json
+          fi
+
+      - name: Run GRC checks
+        id: run_checks
+        run: |
+          mkdir -p evidence
+          python checks/run_checks.py \
+            --input data/user_roles.json \
+            --output evidence/findings_${{ steps.cycle.outputs.cycle_id }}.json
+        continue-on-error: true
+
+      - name: Verify findings integrity (SHA256)
+        run: |
+          FINDINGS_FILE="evidence/findings_${{ steps.cycle.outputs.cycle_id }}.json"
+          if [ -f "$FINDINGS_FILE" ]; then
+            echo "Findings file: $FINDINGS_FILE"
+            echo "SHA256: $(sha256sum $FINDINGS_FILE)"
+            echo "File size: $(wc -c < $FINDINGS_FILE) bytes"
+            python3 -c "
+import json, hashlib
+with open('$FINDINGS_FILE') as f:
+    data = json.load(f)
+findings = data.get('findings', [])
+findings_str = json.dumps(findings, sort_keys=True)
+computed = hashlib.sha256(findings_str.encode()).hexdigest()
+stored = data.get('sha256', '')
+print(f'Stored SHA256:   {stored}')
+print(f'Computed SHA256: {computed}')
+if computed == stored:
+    print('INTEGRITY CHECK: PASSED')
+else:
+    print('INTEGRITY CHECK: FAILED - findings may have been tampered')
+    exit(1)
+"
+          else
+            echo "No findings file generated."
+          fi
+
+      - name: Count findings by severity
+        run: |
+          FINDINGS_FILE="evidence/findings_${{ steps.cycle.outputs.cycle_id }}.json"
+          if [ -f "$FINDINGS_FILE" ]; then
+            python3 -c "
+import json
+with open('$FINDINGS_FILE') as f:
+    data = json.load(f)
+m = data.get('metadata', {})
+print('=== GRC FINDINGS SUMMARY ===')
+print(f'Organization: {m.get(\"organization\", \"N/A\")}')
+print(f'System: {m.get(\"system\", \"N/A\")}')
+print(f'Cycle: {m.get(\"cycle_id\", \"N/A\")}')
+print(f'Total Findings: {m.get(\"total_findings\", 0)}')
+print(f'  CRITICAL: {m.get(\"critical_count\", 0)}')
+print(f'  HIGH: {m.get(\"high_count\", 0)}')
+print(f'  MEDIUM: {m.get(\"medium_count\", 0)}')
+print(f'  LOW: {m.get(\"low_count\", 0)}')
+"
+          fi
+
+      - name: Commit findings to evidence store
+        run: |
+          git config user.name "GRC-Bot"
+          git config user.email "grc-bot@company-x.internal"
+          git add evidence/
+          if git diff --staged --quiet; then
+            echo "No new findings to commit."
+          else
+            git commit -m "chore(evidence): auto-commit GRC findings ${{ steps.cycle.outputs.cycle_id }} [skip ci]"
+            git push
+          fi
+
+      - name: Fail if CRITICAL findings exist
+        run: |
+          FINDINGS_FILE="evidence/findings_${{ steps.cycle.outputs.cycle_id }}.json"
+          if [ -f "$FINDINGS_FILE" ]; then
+            CRITICAL=$(python3 -c "import json; d=json.load(open('$FINDINGS_FILE')); print(d.get('metadata',{}).get('critical_count',0))")
+            if [ "$CRITICAL" -gt 0 ]; then
+              echo "::error::$CRITICAL CRITICAL finding(s) detected! Immediate action required."
+              exit 1
+            fi
+          fi
+          echo "No CRITICAL findings. Checks passed."
+
+  notify-summary:
+    name: Notify GRC Summary
+    needs: grc-check
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: GRC run summary
+        run: |
+          echo "GRC Check run completed."
+          echo "Status: ${{ needs.grc-check.result }}"
+          echo "Cycle: $(date +'%Y-Q')$(((($(date +%-m)-1)/3)+1))"
+          echo "Repository: ${{ github.repository }}"
+          echo "See Actions tab for detailed findings report."

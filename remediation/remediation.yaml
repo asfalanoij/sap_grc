@@ -1,0 +1,120 @@
+# Remediation Tracking - Company X SAP GRC-Lite
+# Ruleset Version: v2.0.0
+# Purpose: Track, escalate, and close findings from GRC checks
+# Owner: IT Risk (2nd line)
+
+metadata:
+  version: "2.0.0"
+  organization: "Company X"
+  system: "SAP S/4HANA Client 300"
+  owner: "IT Risk"
+  assurance: "Internal Audit"
+
+sla_policy:
+  CRITICAL:
+    initial_response_hours: 4
+    resolution_days: 3
+    escalation_path:
+      - level: 1
+        owner: "IT Risk Manager"
+        trigger_hours: 4
+      - level: 2
+        owner: "CISO"
+        trigger_hours: 24
+      - level: 3
+        owner: "CEO"
+        trigger_days: 3
+  HIGH:
+    initial_response_hours: 24
+    resolution_days: 7
+    escalation_path:
+      - level: 1
+        owner: "IT Manager"
+        trigger_hours: 24
+      - level: 2
+        owner: "IT Risk Manager"
+        trigger_days: 3
+  MEDIUM:
+    initial_response_hours: 48
+    resolution_days: 14
+    escalation_path:
+      - level: 1
+        owner: "IT Manager"
+        trigger_days: 7
+  LOW:
+    initial_response_hours: 72
+    resolution_days: 30
+    escalation_path:
+      - level: 1
+        owner: "IT Team Lead"
+        trigger_days: 14
+
+recurrence_policy:
+  definition: "A finding is considered recurring if the same rule fires against the same user/role combination in 2 or more consecutive review cycles."
+  actions:
+    first_recurrence:
+      flag: "RECURRING"
+      require_root_cause: true
+      notify: ["IT Risk Manager", "Department Head"]
+      sla_reduction_percent: 50
+    second_recurrence:
+      flag: "CHRONIC"
+      require_root_cause: true
+      require_action_plan: true
+      notify: ["CISO", "Internal Audit"]
+      escalate_to_audit_committee: false
+    third_recurrence:
+      flag: "SYSTEMIC"
+      require_root_cause: true
+      require_action_plan: true
+      require_management_attestation: true
+      notify: ["CISO", "Internal Audit", "Audit Committee"]
+      escalate_to_audit_committee: true
+
+finding_lifecycle:
+  statuses:
+    - OPEN
+    - IN_PROGRESS
+    - PENDING_VERIFICATION
+    - CLOSED
+    - OVERDUE
+    - ESCALATED
+    - CHRONIC
+    - SYSTEMIC
+
+  transitions:
+    OPEN:
+      next: [IN_PROGRESS, OVERDUE]
+    IN_PROGRESS:
+      next: [PENDING_VERIFICATION, OVERDUE]
+    PENDING_VERIFICATION:
+      next: [CLOSED, IN_PROGRESS]
+    OVERDUE:
+      next: [ESCALATED]
+    ESCALATED:
+      next: [IN_PROGRESS, CLOSED]
+
+root_cause_categories:
+  - RC-001: "Inadequate access provisioning process"
+  - RC-002: "Role design gap in SAP authorization concept"
+  - RC-003: "Insufficient access review frequency"
+  - RC-004: "HR-IT process disconnect (joiners/movers/leavers)"
+  - RC-005: "Emergency access not decommissioned post-use"
+  - RC-006: "Manual override without compensating control"
+  - RC-007: "Configuration drift from approved baseline"
+
+evidence_requirements:
+  per_finding:
+    - finding_id: "auto-generated"
+    - rule_id: "referenced from rules/*.yaml"
+    - user_affected: "SAP user ID"
+    - roles_affected: "list of SAP roles/profiles"
+    - detection_date: "ISO 8601"
+    - cycle_id: "YYYY-QN format"
+    - sha256_hash: "auto-generated at commit"
+    - remediation_action_taken: "text"
+    - root_cause_category: "RC-XXX"
+    - recurrence_count: "integer"
+    - recurrence_flag: "NONE | RECURRING | CHRONIC | SYSTEMIC"
+    - closed_date: "ISO 8601 or null"
+    - closed_by: "name/role"

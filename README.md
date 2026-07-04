@@ -1,49 +1,88 @@
-# SAP GRC-Lite for Company X
+# SAP GRC-Lite — Compliance-as-Code for SAP User Access Management
 
-**SAP S/4HANA Client 300 | Company X | Ruleset v2.0**
+**SAP S/4HANA Client 300 | Company X | Ruleset v2.0 | Proof of Concept**
 
 **ICoFR Basis:** Internal Regulation No. 11/2024 (COSO 2013) | Audit: PCAOB AS 2201 / AS 1105
 
 ---
 
-## Overview
+## Problem Statement
 
-This repository contains the SAP GRC-Lite ruleset and compliance-as-code blueprint for Company X's SAP S/4HANA (Client 300) User Access Management (UAM) and User Access Review (UAR) program.
+Company X runs its core financial processes on SAP S/4HANA. Who can do what
+inside SAP is therefore a direct driver of financial-reporting risk: a single
+user who can both create a vendor and approve a payment to that vendor can
+commit and conceal fraud without any second pair of eyes.
 
-**Owner of DEFINITION:** GR Unit + IT Risk (2nd line)
-**Owner of OPERATION:** IT (1st line)
-**Assurance:** Internal Audit (3rd line)
+Today, the controls that manage this risk have four structural weaknesses:
 
-## Standards & Frameworks
+1. **User Access Reviews are manual and periodic.** Role assignments are
+   exported to spreadsheets once a quarter, circulated by email, and reviewed
+   by people who cannot realistically evaluate thousands of user-role rows.
+   Between review cycles — up to 90 days — violations accumulate undetected.
 
-- **ICoFR Basis:** Internal Regulation No. 11/2024 (COSO 2013)
-- **Audit Standard:** PCAOB AS 2201 / AS 1105
-- **Review Period:** 2026-01-01 to 2026-06-30
+2. **Segregation-of-Duties (SoD) conflicts are found late, by the auditor.**
+   Internal Audit and external audit detect conflicts *after* they have
+   existed for months. Detection at audit time means the ICoFR deficiency has
+   already occurred; the finding documents the failure rather than preventing it.
 
-## Repository Structure
+3. **The same findings recur cycle after cycle.** Access is revoked to close
+   the finding, then re-granted weeks later because the underlying role design
+   or joiner-mover-leaver process was never fixed. Nothing in the current
+   process *measures* recurrence, so root causes stay invisible to management.
+
+4. **Evidence is fragile.** Review evidence lives in spreadsheets and email
+   threads. It is hard to prove *when* a check ran, *what* data it ran
+   against, and that the results were not edited afterwards — exactly the
+   questions PCAOB AS 1105 asks about evidence reliability.
+
+The commercial answer — SAP GRC Access Control — addresses this, but at a
+license and implementation cost that is difficult to justify for a single
+S/4HANA client. **This PoC tests a third way: express the access-control
+ruleset as version-controlled code, run it automatically, and let the pipeline
+produce its own audit evidence.** If the concept proves out, the business case
+for (or against) a full GRC platform can be made with data instead of opinion.
+
+## The Approach: Compliance-as-Code
+
+Three ideas, borrowed from software engineering and applied to internal control:
+
+| Idea | In software | In this PoC |
+|------|-------------|-------------|
+| Single source of truth | Code in git, reviewed via pull request | SoD matrix, privileged-access and dormancy rules in YAML — every change reviewed, versioned, attributable |
+| Continuous integration | Tests run on every change | Rules engine runs daily and on every ruleset change via GitHub Actions |
+| Immutable artifacts | Build outputs are hashed and archived | Findings are timestamped, hashed, and committed per cycle |
+
+The intended data flow:
 
 ```
-sap_grc/
-├── .github/
-│   └── workflows/
-│       └── grc_checks.yml          # CI/CD pipeline
-├── checks/
-│   └── run_checks.py               # Rules engine (Python)
-├── rules/
-│   ├── sod_matrix.yaml             # SoD conflict definitions
-│   ├── privileged_access.yaml      # Privileged access rules
-│   └── dormant_accounts.yaml       # Dormant/inactive account rules
-├── remediation/
-│   └── remediation.yaml            # Remediation tracking & SLA
-├── evidence/
-│   └── sample_findings.json        # SHA256-hashed findings
-├── controls/
-│   └── control_register.yaml       # Control register (KC-01 to KC-06)
-├── slides.md                       # Executive summary (Marp)
-└── README.md
+SAP S/4HANA (SUIM / USR02 / AGR_USERS export)
+        │
+        ▼
+data/user_roles.json          ← user-role snapshot per cycle
+        │
+        ▼
+checks/run_checks.py          ← evaluates rules/*.yaml
+        │
+        ├── SoD conflicts          (rules/sod_matrix.yaml)
+        ├── Privileged access      (rules/privileged_access.yaml)
+        └── Dormant accounts       (rules/dormant_accounts.yaml)
+        │
+        ▼
+evidence/findings_<cycle>.json ← hashed findings, severity-scored
+        │
+        ├── CI gate: CRITICAL finding → pipeline fails → immediate attention
+        └── Recurrence tracking → repeated findings escalate to root-cause review
 ```
 
-## Control Register Summary
+## Governance (Three Lines Model)
+
+| Line | Role | Responsibility here |
+|------|------|---------------------|
+| 1st — IT | Owner of **operation** | Runs the pipeline, remediates findings within SLA |
+| 2nd — GR Unit + IT Risk | Owner of **definition** | Owns the ruleset and control register; approves rule changes |
+| 3rd — Internal Audit | **Assurance** | Independent evaluation of design and operating effectiveness; author of this PoC as advisory work for the IT division |
+
+## Control Register
 
 | Control ID | Name | Type | Frequency | Owner |
 |-----------|------|------|-----------|-------|
@@ -54,57 +93,87 @@ sap_grc/
 | KC-05 | Access Recurrence Flagging | Detective | Per cycle | Internal Audit |
 | KC-06 | Evidence Archival | Corrective | Per cycle | IT Risk |
 
-## Feedback Loop Architecture
+The differentiating design element is the **feedback loop**: detective
+controls (KC-03..KC-05) do not just raise findings — recurrence of the same
+finding across cycles is classified (NONE → RECURRING → CHRONIC → SYSTEMIC)
+and chronic findings trigger the preventive controls (KC-01/KC-02) to revisit
+role design, closing the loop that manual UAR never closes.
 
-The blueprint adds a **feedback loop** between detective and preventive controls:
+## Repository Structure
 
-1. **Detect** (KC-03 to KC-06) → Findings flagged with recurrence flag
-2. **Track** (remediation.yaml) → SLA, escalation, root-cause required
-3. **Feed back** (KC-01/KC-02) → Function matrix review triggered on repeated SoD hits
-4. **Evidence** → SHA256-hashed, timestamped findings per cycle
+```
+sap_grc/
+├── .github/workflows/grc_checks.yml   # CI pipeline: scheduled + on-change runs
+├── checks/run_checks.py               # Rules engine (Python 3, pyyaml)
+├── rules/
+│   ├── sod_matrix.yaml                # SoD conflict pairs (5 conflicts)
+│   ├── privileged_access.yaml         # Privileged profile allowlists (SAP_ALL etc.)
+│   └── dormant_accounts.yaml          # Inactivity thresholds by account type
+├── controls/control_register.yaml     # KC-01..KC-06, COSO-mapped
+├── remediation/remediation.yaml       # SLA, escalation, recurrence policy
+├── evidence/sample_findings.json      # Illustrative findings output
+├── slides.md                          # Executive brief (Marp)
+└── README.md
+```
 
-## Tech Stack
-
-| Layer | Tool | Purpose |
-|-------|------|---------|
-| Rules definition | YAML | Single source of truth, version-controlled |
-| Rules engine | Python 3.x | Evaluates rules against user-role data |
-| CI/CD | GitHub Actions | Daily scheduled runs + on-change triggers |
-| Evidence storage | JSON + git | Hash-traceable, timestamped findings |
-
-## How to Use
+## Quick Start
 
 ```bash
-# Clone the repo
 git clone https://github.com/asfalanoij/sap_grc.git
 cd sap_grc
 
-# Run the rules engine (requires user-role data in JSON format)
-python checks/run_checks.py
+# The engine needs a user-role snapshot. Place your export at
+# data/user_roles.json — a JSON array of user records:
+#
+#   [
+#     {
+#       "user_id": "JDOE",
+#       "roles": ["Z_AP_INVOICE_ENTRY", "Z_AP_PAYMENT_RUN"],
+#       "profiles": [],
+#       "account_type": "standard",
+#       "account_status": "ACTIVE",
+#       "last_login_date": "2026-05-14"
+#     }
+#   ]
 
-# Check generated evidence
-cat evidence/sample_findings.json
+python3 checks/run_checks.py --input data/user_roles.json
+
+# Findings land in evidence/, and the process exits non-zero
+# if any CRITICAL finding is detected.
 ```
+
+## Current Status — Read Before Relying on This
+
+This is a **proof of concept under active hardening**, not an operating
+control. An Internal Audit diagnosis (2026-07) confirmed the ruleset design
+and control taxonomy are sound, but identified gaps that are being remediated
+under an approved workplan:
+
+- **No SAP ingestion yet.** There is no automated SUIM/USR02/AGR_USERS
+  extraction; the engine currently requires a manually supplied JSON export,
+  and the repository ships no sample dataset.
+- **Recurrence tracking (KC-05) is designed but not yet implemented** — all
+  findings currently report recurrence `NONE`.
+- **Evidence hashing is being reworked.** The current per-run hash is not yet
+  a reliable tamper-evidence mechanism; do not cite it as such in audit
+  workpapers until the hardened evidence chain lands.
+- **Known engine defects** (dormancy thresholds for service/emergency
+  accounts, error handling on malformed input) are queued for fix, alongside
+  a test suite and `requirements.txt`.
+
+Treat current outputs as illustrative. The PoC's purpose is to prove the
+*concept* to management; production adoption requires the workplan to complete
+plus a formal control-design sign-off by the 2nd line.
 
 ## Ruleset Versioning
 
-All rulesets follow semantic versioning (`MAJOR.MINOR.PATCH`):
-- **MAJOR**: Structural changes to control framework
-- **MINOR**: New rules or control additions
-- **PATCH**: Threshold adjustments or label corrections
-
-Current version: `v2.0.0`
-
-## Evidence Integrity
-
-All findings are SHA256-hashed at generation time and committed to git. This provides:
-- Immutable audit trail
-- Tamper-evident evidence chain
-- Cycle-over-cycle recurrence tracking
+Semantic versioning (`MAJOR.MINOR.PATCH`): **MAJOR** = control-framework
+structure changes, **MINOR** = new rules/controls, **PATCH** = threshold or
+label corrections. Current: `v2.0.0`.
 
 ## License
 
 Internal use only. Not for public distribution.
 
 ---
-*GRC Blueprint | Company X | Internal Audit Division | v2.0*
+*GRC Blueprint | Company X | Internal Audit Division (advisory to IT) | v2.0*
